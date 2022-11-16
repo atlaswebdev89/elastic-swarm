@@ -1,0 +1,367 @@
+version: '3.8'
+
+networks:
+    elastic:
+        driver: bridge
+
+volumes:
+  elastic2-data: 
+  elastic1-data:
+  elastic3-data:  
+  elastic4-data:
+  elastic-coor1-data:
+  elastic-coor2-data:
+  kibana-data:
+
+services:
+    # Для балансировки запросов к logstash
+    web-proxy-logstash:
+        image: webdev89/elk-nginx-logstash
+        container_name: nginx-proxy-logstash
+        hostname: nginx-proxy-logstash
+        restart: unless-stopped
+        ports:
+            - "514:514"
+            - "514:514/udp"
+        networks:
+          - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+
+     # Настройка для балансировки запросов к kinaba
+    web-proxy-kibana:
+        image: webdev89/elk-nginx-kibana-proxy
+        container_name: nginx-proxy-kibana
+        hostname: nginx-proxy-kibana
+        restart: unless-stopped
+        ports:
+            - "80:80"
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    
+    # Настройка для Logstash (server 1)
+    elastic-logstash-node:
+        image: webdev89/elk-logstash:latest
+        container_name: logstash
+        hostname: logstash
+        restart: unless-stopped
+        networks:
+            - elastic
+        depends_on:
+            - web-proxy-logstash
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    
+    # Настройка kibana node 1
+    elastic-kibana-node:
+        image: webdev89/elk-kibana:latest
+        container_name: kibana
+        hostname: kibana
+        restart: unless-stopped
+        environment:
+            - SECURITY=true
+            - USER_NAME=kibana_system
+            - PASSWORD=c7B7qv22usAwbwTCxN2O
+            - ELASTIC_HOST=elastic-node-coordination-1
+            - ELASTIC_HOST_SECONDORY=elastic-node-coordination-2
+            - PUBLIC_BASE_URL=elastic-kibana-node-1
+        volumes:
+            - kibana-data:/usr/share/kibana/data/
+        networks:
+            - elastic
+        depends_on:
+            - elastic-node-1
+            - elastic-node-2
+            - elastic-node-3
+            - elastic-node-4
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    # Настройка Elasticsearch
+    elastic-node-1:
+        image: webdev89/elk-elastic-node:latest
+        container_name: elastic-node-1
+        hostname: elastic-node-1
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-01
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            #discovery.seed_hosts: ["host1", "host2"]
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        ports:
+            - "9200:9200"
+            - "9300:9300"
+        volumes:
+            - elastic1-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    
+    elastic-node-2:
+        image: webdev89/elk-elastic-node:latest
+        container_name: elastic-node-2
+        hostname: elastic-node-2
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-02
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        volumes:
+            - elastic2-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    
+    elastic-node-3:
+        image: webdev89/elk-elastic-node:latest
+        container_name: elastic-node-3
+        hostname: elastic-node-3
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-03
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        volumes:
+            - elastic3-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+    
+    elastic-node-4:
+        image: webdev89/elk-elastic-node:latest
+        container_name: elastic-node-4
+        hostname: elastic-node-4
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-04
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        volumes:
+            - elastic4-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+
+    # Две ноды elastic будет использовать в качестве балансировки нагрузки. Они будут не мастер и не дата. Только распределяют запросы и учавствуют в выборах мастера
+    elastic-node-coordination-1:
+        image: webdev89/elk-elastic-coor:latest
+        container_name: elastic-node-coordination-1
+        hostname: elastic-node-coordination-1
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-coordination-01
+            - NODE_ROLES=[ master, voting_only ]
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            - TRANSPORT_HOSTS=0.0.0.0 
+            - TRANSPORT_TCP_PORT=9300-9400
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        volumes:
+            - elastic-coor1-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+
+    elastic-node-coordination-2:
+        image: webdev89/elk-elastic-coor:latest
+        container_name: elastic-node-coordination-2
+        hostname: elastic-node-coordination-2
+        restart: unless-stopped
+        # Без этого не работает при дериктиве bootstrap.memory_lock=true
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        environment:
+             # Отключить использование файла подкачки. Для elastic не рекомендоуется использовать swapp
+            - bootstrap.memory_lock=true
+            # Для одиночного хоста, не в cluster
+            # - discovery.type=single-node
+            - TZ=Europe/Minsk
+            # Ограничение размера кучи
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            # Включаем настройку безопасности с применением сертификатов. Для получения корневого сертификата 
+            # необходимо запустить скрипт init-ca-cert.sh в папке start/
+            - SECURITY=true
+            - CLUSTER_NAME=es-clusters
+            - NODE_NAME=node-coordination-02
+            - NODE_ROLES=[ master, voting_only ]
+            - NETWORK_HOST=0.0.0.0
+            - HTTP_PORT=9200
+            - TRANSPORT_HOSTS=0.0.0.0 
+            - TRANSPORT_TCP_PORT=9300-9400
+            - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
+            - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
+        volumes:
+            - elastic-coor2-data:/usr/share/elasticsearch/data/
+        networks:
+            - elastic
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
+
+    cerebro:
+        image: lmenezes/cerebro:latest
+        container_name: cerebro-elastic
+        hostname: cerebro-elastic
+        restart: unless-stopped
+        ports:
+            - 8001:9000
+        networks:
+            - elastic
+        depends_on:
+            - elastic-node-1
+            - elastic-node-2
+            - elastic-node-3
+            - elastic-node-4
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"  
+
+    elastichq:
+        image: elastichq/elasticsearch-hq
+        container_name: elastichq
+        hostname: elastichq
+        restart: unless-stopped
+        environment:
+            - "HQ_DEFAULT_URL=http://elastic-node-3:9200"
+        ports:
+            - 5000:5000
+        networks:
+            - elastic
+        depends_on:
+            - elastic-node-1
+            - elastic-node-2
+            - elastic-node-3
+            - elastic-node-4
+        logging:
+            driver: "fluentd"
+            options:
+                fluentd-async-connect: "true" 
+                tag: "docker-{{.Name}}"
