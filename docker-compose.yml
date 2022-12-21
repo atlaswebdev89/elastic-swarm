@@ -2,7 +2,7 @@ version: '3.8'
 
 networks:
     elastic:
-        driver: bridge
+        driver: overlay
 
 volumes:
   elastic2-data: 
@@ -119,9 +119,10 @@ services:
             #discovery.seed_hosts: ["host1", "host2"]
             - DISCOVERY_SEED_HOSTS=["elastic-node-1", "elastic-node-2", "elastic-node-3", "elastic-node-4"]
             - CLUSTER_INITIAL_MASTER_NODES=["node-01", "node-02", "node-03", "node-04"]
-        ports:
-            - "9200:9200"
-            - "9300:9300"
+        # С портами elastic поднимается на другом интерфейсе и не может соединиться с кластером
+        #ports:
+        #    - "9200:9200"
+        #    - "9300:9300"
         volumes:
             - elastic1-data:/usr/share/elasticsearch/data/
         networks:
